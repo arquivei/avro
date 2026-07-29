@@ -221,6 +221,36 @@ func TestAvroGen_GeneratesSchemaWithCustomLogicalTypes(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
+// TestAvroGen_DoesNotWriteFileOnFormatError is a regression test for
+// docs/seguranca-2026-07-29/README.md SEC-05: previously, if the generated code
+// failed to format, avrogen still wrote the unformatted (and, with a
+// hostile schema, potentially malicious) content to the -o file before
+// reporting the error.
+func TestAvroGen_DoesNotWriteFileOnFormatError(t *testing.T) {
+	path, err := os.MkdirTemp("./", "avrogen")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(path) })
+
+	badTemplate := filepath.Join(path, "bad.tmpl")
+	require.NoError(t, os.WriteFile(badTemplate, []byte("package {{ .PackageName }}\n\nfunc broken( {\n"), 0o600))
+
+	file := filepath.Join(path, "test.go")
+	args := []string{
+		"avrogen", "-pkg", "testpkg", "-o", file,
+		"-template-filename", badTemplate,
+		"testdata/schema.avsc",
+	}
+
+	var stderr bytes.Buffer
+	gotCode := realMain(args, io.Discard, &stderr)
+
+	assert.Equal(t, 3, gotCode)
+	assert.Contains(t, stderr.String(), "could not be formatted")
+
+	_, err = os.Stat(file)
+	assert.True(t, os.IsNotExist(err), "output file must not be created when generated code fails to format")
+}
+
 func TestParseTags(t *testing.T) {
 	tests := []struct {
 		name string

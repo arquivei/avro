@@ -21,6 +21,13 @@ import (
 const (
 	schemaKey = "avro.schema"
 	codecKey  = "avro.codec"
+
+	// defaultMaxBlockSize is the default maximum size, in bytes, of a
+	// single OCF block's declared (pre-decompression) data and of a
+	// codec's decompressed output. It guards against files that declare
+	// implausibly large or negative block sizes, and against
+	// decompression-bomb blocks. See WithMaxBlockSize.
+	defaultMaxBlockSize = 100 << 20 // 100 MiB
 )
 
 var (
@@ -57,6 +64,23 @@ type decoderConfig struct {
 	DecoderConfig avro.API
 	SchemaCache   *avro.SchemaCache
 	CodecOptions  codecOptions
+	MaxBlockSize  int
+}
+
+// resolveMaxBlockSize converts the user-facing MaxBlockSize option into the
+// effective limit: 0 (unset) resolves to defaultMaxBlockSize, a negative
+// value disables the limit (returned as -1), and a positive value is used
+// as-is. This mirrors the MaxByteSliceSize convention used elsewhere in the
+// avro package.
+func resolveMaxBlockSize(n int) int64 {
+	switch {
+	case n < 0:
+		return -1
+	case n == 0:
+		return defaultMaxBlockSize
+	default:
+		return int64(n)
+	}
 }
 
 // DecoderFunc represents a configuration function for Decoder.
@@ -87,9 +111,34 @@ func WithZStandardDecoderOptions(opts ...zstd.DOption) DecoderFunc {
 // WithZStandardDecoder sets a pre-created ZStandard decoder to be reused.
 // This allows sharing a single decoder across multiple OCF decoders for efficiency.
 // The caller is responsible for closing the decoder after all OCF decoders are done.
+//
+// Because the decoder is created outside of this package, WithMaxBlockSize's
+// decompressed-size limit cannot be enforced for ZStandard when this option
+// is used; only the pre-decompression block-size check still applies. Size
+// the shared decoder's own options (e.g. zstd.WithDecoderMaxMemory) accordingly
+// if it will process untrusted input.
 func WithZStandardDecoder(dec *zstd.Decoder) DecoderFunc {
 	return func(cfg *decoderConfig) {
 		cfg.CodecOptions.ZStandardOptions.Decoder = dec
+	}
+}
+
+// WithMaxBlockSize sets the maximum size, in bytes, that a single OCF
+// block's declared (pre-decompression) data may have, and the maximum
+// decompressed size the compression codec may produce for that block.
+// Reading a block over that size returns an error instead of allocating
+// memory for it.
+//
+// This guards against files that declare an implausibly large or negative
+// block size, and against decompression-bomb blocks (a small compressed
+// payload that expands to a huge decompressed size).
+//
+// Defaults to 100 MiB. A value <= 0 disables the limit - not recommended
+// for untrusted input. See WithZStandardDecoder for a caveat when reusing a
+// pre-created ZStandard decoder.
+func WithMaxBlockSize(size int) DecoderFunc {
+	return func(cfg *decoderConfig) {
+		cfg.MaxBlockSize = size
 	}
 }
 
@@ -105,6 +154,10 @@ type Decoder struct {
 	codec Codec
 
 	count int64
+
+	// maxBlockSize is the resolved (see resolveMaxBlockSize) limit on a
+	// block's declared, pre-decompression size. -1 means no limit.
+	maxBlockSize int64
 }
 
 // NewDecoder returns a new decoder that reads from reader r.
@@ -120,6 +173,9 @@ func NewDecoder(r io.Reader, opts ...DecoderFunc) (*Decoder, error) {
 		opt(&cfg)
 	}
 
+	maxBlockSize := resolveMaxBlockSize(cfg.MaxBlockSize)
+	cfg.CodecOptions.MaxDecodedSize = maxBlockSize
+
 	reader := avro.NewReader(r, 1024)
 
 	h, err := readHeader(reader, cfg.SchemaCache, cfg.CodecOptions)
@@ -130,13 +186,14 @@ func NewDecoder(r io.Reader, opts ...DecoderFunc) (*Decoder, error) {
 	decReader := bytesx.NewResetReader([]byte{})
 
 	return &Decoder{
-		reader:      reader,
-		resetReader: decReader,
-		decoder:     cfg.DecoderConfig.NewDecoder(h.Schema, decReader),
-		meta:        h.Meta,
-		sync:        h.Sync,
-		codec:       h.Codec,
-		schema:      h.Schema,
+		reader:       reader,
+		resetReader:  decReader,
+		decoder:      cfg.DecoderConfig.NewDecoder(h.Schema, decReader),
+		meta:         h.Meta,
+		sync:         h.Sync,
+		codec:        h.Codec,
+		schema:       h.Schema,
+		maxBlockSize: maxBlockSize,
 	}, nil
 }
 
@@ -202,6 +259,15 @@ func (d *Decoder) readBlock() int64 {
 
 	count := d.reader.ReadLong()
 	size := d.reader.ReadLong()
+
+	if size < 0 {
+		d.reader.Error = fmt.Errorf("decoder: invalid block size %d", size)
+		return 0
+	}
+	if d.maxBlockSize >= 0 && size > d.maxBlockSize {
+		d.reader.Error = fmt.Errorf("decoder: block size %d exceeds maximum of %d bytes", size, d.maxBlockSize)
+		return 0
+	}
 
 	// Read the blocks data
 	switch {
