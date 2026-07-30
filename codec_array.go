@@ -53,6 +53,8 @@ func (d *arrayDecoder) Decode(ptr unsafe.Pointer, r *Reader) {
 		sliceType.UnsafeSet(ptr, sliceType.UnsafeMakeSlice(0, 0))
 	}
 
+	maxSize := int64(r.cfg.getMaxSliceAllocSize())
+
 	for {
 		l, _ := r.ReadBlockHeader()
 		if l == 0 {
@@ -63,13 +65,17 @@ func (d *arrayDecoder) Decode(ptr unsafe.Pointer, r *Reader) {
 			chunk := min(l, int64(arrayGrowChunk))
 			l -= chunk
 
-			start := size
-			size += int(chunk)
-
-			if size > r.cfg.getMaxSliceAllocSize() {
+			// The cumulative size is compared in int64 and checked before it
+			// is applied. Summing into the int accumulator first could wrap
+			// past the limit on platforms where maxSliceAllocSize is close to
+			// math.MaxInt, letting a wrapped negative total pass the check.
+			if int64(size)+chunk > maxSize {
 				r.ReportError("decode array", "size is greater than `Config.MaxSliceAllocSize`")
 				return
 			}
+
+			start := size
+			size += int(chunk)
 
 			sliceType.UnsafeGrow(ptr, size)
 

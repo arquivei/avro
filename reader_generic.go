@@ -97,8 +97,13 @@ func (r *Reader) ReadNext(schema Schema) any {
 		return obj
 	case Union:
 		types := schema.(*UnionSchema).Types()
-		idx := int(r.ReadLong())
-		if idx < 0 || idx > len(types)-1 {
+		// The index is bounds-checked as an int64. Narrowing first would let
+		// an out-of-range wire index truncate to a valid one on 32-bit builds
+		// — 1<<32 becomes 0 — silently selecting types[0], which for the
+		// idiomatic ["null", T] union yields null where the producer encoded a
+		// payload.
+		idx := r.ReadLong()
+		if idx < 0 || idx > int64(len(types)-1) {
 			r.ReportError("Read", "unknown union type")
 			return nil
 		}
