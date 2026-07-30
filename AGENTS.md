@@ -9,8 +9,9 @@ Este repositório é o fork **`arquivei/avro`** do projeto `hamba/avro`, cujo up
 **descontinuado** pelo autor original. A Qive assumiu a **manutenção interna ativa**:
 correções, novas features e bumps de dependência passam a ser feitos aqui.
 
-O module path continua sendo `github.com/hamba/avro/v2` — os consumidores internos apontam
-para este fork via `replace` no `go.mod`.
+O module path é `github.com/arquivei/avro/v2` — renomeado a partir de `github.com/hamba/avro/v2`
+em 30/07/2026. Consumidores internos que ainda apontam para o path antigo via `replace` no
+`go.mod` precisam migrar o import path.
 
 Capacidades principais:
 
@@ -112,8 +113,9 @@ Serviço externo: o pacote `registry/` fala HTTP com um **Confluent Schema Regis
 
 ## O que NÃO fazer
 
-- **Não alterar o module path** `github.com/hamba/avro/v2`. Consumidores internos dependem dele
-  via `replace`; renomear quebra todos de uma vez.
+- **Não alterar o module path** `github.com/arquivei/avro/v2`. Consumidores internos dependem
+  dele; renomear quebra todos de uma vez. O sufixo `/v2` é obrigatório enquanto as tags forem
+  `v2.x` — remover exige recomeçar o versionamento.
 - **Não quebrar a API pública.** É uma lib v2 com consumidores externos conhecidos (Apache Arrow
   for Go, confluent-kafka-go, pulsar-client-go). Mudança incompatível exige decisão humana.
 - **Não assumir plataforma 64-bit.** Existem `config_386.go` / `config_arm.go` / `config_x64.go`

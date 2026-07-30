@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hamba/avro/v2"
+	"github.com/arquivei/avro/v2"
 )
 
 // fuzzDecodeAPI bounds allocation per fuzz iteration so a long fuzzing run

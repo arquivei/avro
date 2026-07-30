@@ -5,7 +5,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/hamba/avro/v2"
+	"github.com/arquivei/avro/v2"
 )
 
 // ACInnerRecord is a generated struct.

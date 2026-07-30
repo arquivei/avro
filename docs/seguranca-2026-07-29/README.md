@@ -107,7 +107,8 @@ Herdadas do `AGENTS.md`:
 - **Não introduzir alocações no hot path** — validado com
   `go test -bench=. -benchmem` antes e depois de cada fase.
 - **Não assumir plataforma 64-bit** — o CI compila para 386, arm, ppc64le, s390x.
-- **Não alterar o module path** `github.com/hamba/avro/v2`.
+- **Não alterar o module path** `github.com/arquivei/avro/v2`
+  (era `github.com/hamba/avro/v2` à época desta sessão; renomeado em 30/07/2026).
 
 ---
 
