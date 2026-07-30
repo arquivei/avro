@@ -218,6 +218,22 @@ For security reasons, the configuration `Config.MaxByteSliceSize` restricts the 
 by the `Reader`. The default maximum size is `1MiB` and is configurable. This is required to stop untrusted input from consuming all memory and
 crashing the application. Should this not be need, setting a negative number will disable the behaviour.
 
+##### Untrusted Input With Maps
+
+The number of entries a decoded `map` may have is driven entirely by block counts read from the wire. `Config.MaxMapAllocSize` caps
+that number, cumulatively across all of a map's blocks, so the limit cannot be bypassed by splitting the entries into many blocks that
+are each below it.
+
+Unlike `MaxByteSliceSize`, this limit is **not** enabled by default — an unset value keeps the previous unbounded behaviour, so that
+existing users decoding large, trusted maps are unaffected. Set it explicitly when decoding untrusted input:
+
+```go
+cfg := avro.Config{MaxMapAllocSize: 10_000}.Freeze()
+dec := cfg.NewDecoder(schema, r)
+```
+
+`Config.MaxSliceAllocSize` is the equivalent limit for `array` types, and is likewise opt-in.
+
 ## Benchmark
 
 Benchmark source code can be found at: [https://github.com/nrwiersma/avro-benchmarks](https://github.com/nrwiersma/avro-benchmarks)

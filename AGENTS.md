@@ -128,12 +128,18 @@ Serviço externo: o pacote `registry/` fala HTTP com um **Confluent Schema Regis
 
 ## Informações Extras
 
-- **Segurança**: [`docs/seguranca-2026-07-29/`](docs/seguranca-2026-07-29/) —
-  catálogo de achados e plano de remediação em 5 fases. Todos os achados
-  corrigíveis (incluindo `CVE-2026-46385`) foram corrigidos na sessão de
-  29/07/2026 — ver o documento para o único achado deixado deliberadamente
-  sem correção (SEC-09) e para o histórico completo antes de mexer nos
-  decoders (`codec_*.go`, `reader_generic.go`) ou no pacote `ocf/`.
+- **Segurança**: catálogo de achados (`SEC-NN`) e planos de remediação, em duas
+  sessões. **Leia antes de mexer nos decoders (`codec_*.go`, `reader*.go`) ou no
+  pacote `ocf/`** — quase todo guard ali existe por causa de um achado, e o
+  documento diz qual.
+  - [`docs/seguranca-2026-07-29/`](docs/seguranca-2026-07-29/) — `SEC-01`..`SEC-09`,
+    plano em 5 fases, inclui `CVE-2026-46385`. Ver o documento para o único
+    achado deixado deliberadamente sem correção (`SEC-09`).
+  - [`docs/seguranca-2026-07-30/`](docs/seguranca-2026-07-30/) — `SEC-10` e
+    `SEC-11`: `GO-2026-5047`/`CVE-2026-46384` (narrowing e overflow de valores de
+    64 bits do wire) e `GO-2026-5048` (crescimento ilimitado de map). Explica por
+    que `Config.MaxMapAllocSize` é opt-in e por que o `govulncheck` não acusa
+    nenhum dos dois neste repo.
 - Especificação Avro: https://avro.apache.org/docs/current/
 - Single Object Encoding: https://avro.apache.org/docs/1.10.2/spec.html#single_object_encoding
 - Fingerprints de schema: https://avro.apache.org/docs/current/spec.html#schema_fingerprints

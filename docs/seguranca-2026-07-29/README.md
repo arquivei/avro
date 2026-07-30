@@ -3,6 +3,10 @@
 Levantamento e remediação realizados em **29/07/2026** sobre o commit `afbafcb`.
 Todas as 5 fases abaixo foram implementadas e validadas nesta mesma sessão.
 
+> **Continuação:** [`docs/seguranca-2026-07-30/`](../seguranca-2026-07-30/README.md)
+> cobre `SEC-10` e `SEC-11` — dois CVEs (`GO-2026-5047`/`CVE-2026-46384` e
+> `GO-2026-5048`) publicados em 27/07/2026, depois deste levantamento.
+
 ## Contexto
 
 Este repositório é o fork `arquivei/avro` de `hamba/avro`, cujo upstream foi

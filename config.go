@@ -56,6 +56,17 @@ type Config struct {
 	// allocation size by default.
 	// If this size is exceeded, the decoder returns an error.
 	MaxSliceAllocSize int
+
+	// MaxMapAllocSize is the maximum number of entries the decoder will add to a single map,
+	// set to the max heap allocation size by default.
+	// The limit is cumulative across all of a map's blocks, so it cannot be bypassed by
+	// chunking the entries across many blocks that are each below the limit.
+	// If this size is exceeded, the decoder returns an error.
+	//
+	// The default is effectively unbounded, matching MaxSliceAllocSize. Set this explicitly
+	// when decoding maps from untrusted input: an attacker-controlled block count is what
+	// drives how much the destination map grows.
+	MaxMapAllocSize int
 }
 
 // Freeze makes the configuration immutable.
@@ -299,6 +310,14 @@ func (c *frozenConfig) getMaxByteSliceSize() int {
 
 func (c *frozenConfig) getMaxSliceAllocSize() int {
 	size := c.config.MaxSliceAllocSize
+	if size > maxAllocSize || size <= 0 {
+		return maxAllocSize
+	}
+	return size
+}
+
+func (c *frozenConfig) getMaxMapAllocSize() int {
+	size := c.config.MaxMapAllocSize
 	if size > maxAllocSize || size <= 0 {
 		return maxAllocSize
 	}

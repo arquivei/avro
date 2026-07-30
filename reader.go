@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"strings"
 	"unsafe"
 )
@@ -278,20 +279,32 @@ func (r *Reader) ReadString() string {
 }
 
 func (r *Reader) readBytes(op string) []byte {
-	size := int(r.ReadLong())
-	if size < 0 {
+	// The length stays an int64 until every bound has been checked. Narrowing
+	// first would let a wire length above the platform's int range truncate
+	// silently on 32-bit builds — e.g. (1<<32)+5 becomes 5 — and slip past
+	// both the negative check and `Config.MaxByteSliceSize` entirely.
+	size64 := r.ReadLong()
+	if size64 < 0 {
 		fnName := "Read" + strings.ToTitle(op)
 		r.ReportError(fnName, "invalid "+op+" length")
 		return nil
 	}
-	if size == 0 {
+	if size64 == 0 {
 		return []byte{}
 	}
-	if maxSize := r.cfg.getMaxByteSliceSize(); maxSize > 0 && size > maxSize {
+	if maxSize := r.cfg.getMaxByteSliceSize(); maxSize > 0 && size64 > int64(maxSize) {
 		fnName := "Read" + strings.ToTitle(op)
 		r.ReportError(fnName, "size is greater than `Config.MaxByteSliceSize`")
 		return nil
 	}
+	if size64 > int64(maxAllocSize) {
+		// Reachable when MaxByteSliceSize is negative (limit disabled): make
+		// would panic on a length that does not fit the platform's int.
+		fnName := "Read" + strings.ToTitle(op)
+		r.ReportError(fnName, "size is greater than the maximum allocation size")
+		return nil
+	}
+	size := int(size64)
 
 	// The bytes are entirely in the buffer and of a reasonable size.
 	// Use the byte slab.
@@ -312,12 +325,37 @@ func (r *Reader) readBytes(op string) []byte {
 }
 
 // ReadBlockHeader reads a Block Header from the Reader.
+//
+// Both the element count and the byte size are read as Avro longs and are
+// required to fit in an int32. No legitimate block declares more than
+// math.MaxInt32 elements or bytes, and accepting wider values lets an
+// untrusted stream truncate silently once a caller narrows the result to a
+// platform int on 32-bit builds. The count is negated in int64 so that
+// math.MinInt64 — which negates to itself — is rejected rather than turned
+// into a negative "length" that callers treat as a live block.
 func (r *Reader) ReadBlockHeader() (int64, int64) {
 	length := r.ReadLong()
 	if length < 0 {
+		if length < -math.MaxInt32 {
+			r.ReportError("ReadBlockHeader", "block count is greater than `math.MaxInt32`")
+			return 0, 0
+		}
+
 		size := r.ReadLong()
+		if size < 0 {
+			r.ReportError("ReadBlockHeader", "invalid block size")
+			return 0, 0
+		}
+		if size > math.MaxInt32 {
+			r.ReportError("ReadBlockHeader", "block size is greater than `math.MaxInt32`")
+			return 0, 0
+		}
 
 		return -length, size
+	}
+	if length > math.MaxInt32 {
+		r.ReportError("ReadBlockHeader", "block count is greater than `math.MaxInt32`")
+		return 0, 0
 	}
 
 	return length, 0

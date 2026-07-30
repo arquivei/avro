@@ -28,6 +28,11 @@ const (
 	// implausibly large or negative block sizes, and against
 	// decompression-bomb blocks. See WithMaxBlockSize.
 	defaultMaxBlockSize = 100 << 20 // 100 MiB
+
+	// maxInt is the largest value that fits in a platform int, expressed as an
+	// int64 so that a size read from the wire can be range-checked before it
+	// is narrowed. On 32-bit builds this is math.MaxInt32.
+	maxInt = int64(^uint(0) >> 1)
 )
 
 var (
@@ -266,6 +271,13 @@ func (d *Decoder) readBlock() int64 {
 	}
 	if d.maxBlockSize >= 0 && size > d.maxBlockSize {
 		d.reader.Error = fmt.Errorf("decoder: block size %d exceeds maximum of %d bytes", size, d.maxBlockSize)
+		return 0
+	}
+	if size > maxInt {
+		// Reachable when WithMaxBlockSize disables the limit: make would panic
+		// on a size that does not fit the platform's int, which on 32-bit
+		// builds is any size above math.MaxInt32.
+		d.reader.Error = fmt.Errorf("decoder: block size %d exceeds the maximum allocatable size", size)
 		return 0
 	}
 
@@ -693,7 +705,12 @@ func skipToEnd(reader *avro.Reader, sync [16]byte) error {
 			return nil
 		}
 		size := reader.ReadLong()
-		reader.SkipNBytes(int(size))
+		if size < 0 {
+			return fmt.Errorf("invalid block size %d", size)
+		}
+		// Skipped in int64: narrowing here would truncate a large wire size on
+		// 32-bit builds and resume reading in the middle of a block's data.
+		reader.SkipNBytesInt64(size)
 		if reader.Error != nil {
 			return reader.Error
 		}

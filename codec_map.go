@@ -61,10 +61,22 @@ func (d *mapDecoder) Decode(ptr unsafe.Pointer, r *Reader) {
 		d.mapType.UnsafeSet(ptr, d.mapType.UnsafeMakeMap(0))
 	}
 
+	var size int64
+	maxSize := int64(r.cfg.getMaxMapAllocSize())
+
 	for {
 		l, _ := r.ReadBlockHeader()
 		if l == 0 {
 			break
+		}
+
+		// Accumulated across blocks so that a huge entry count cannot be
+		// smuggled in as many individually-small blocks. Both operands are
+		// int64 and bounded by ReadBlockHeader, so the sum cannot wrap.
+		size += l
+		if size > maxSize {
+			r.ReportError("decode map", "size is greater than `Config.MaxMapAllocSize`")
+			return
 		}
 
 		for range l {
@@ -109,10 +121,20 @@ func (d *mapDecoderUnmarshaler) Decode(ptr unsafe.Pointer, r *Reader) {
 		d.mapType.UnsafeSet(ptr, d.mapType.UnsafeMakeMap(0))
 	}
 
+	var size int64
+	maxSize := int64(r.cfg.getMaxMapAllocSize())
+
 	for {
 		l, _ := r.ReadBlockHeader()
 		if l == 0 {
 			break
+		}
+
+		// See mapDecoder.Decode: the limit is cumulative across blocks.
+		size += l
+		if size > maxSize {
+			r.ReportError("decode map", "size is greater than `Config.MaxMapAllocSize`")
+			return
 		}
 
 		for range l {
