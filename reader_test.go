@@ -667,6 +667,37 @@ func TestReader_ReadStringLargerThanMaxByteSliceSize(t *testing.T) {
 	assert.Error(t, r.Error)
 }
 
+// TestReader_ReadBytesAppendDoesNotAliasLaterReads is a regression test for
+// docs/seguranca-2026-07-29/README.md SEC-06: ReadBytes' fast path (for small values
+// that fit entirely in the current buffer) used to hand back a slice whose
+// capacity extended into the Reader's internal slab, the same backing array
+// later small reads are served from. Appending to that slice - well within
+// the old, unintended capacity - wrote into memory a subsequent ReadBytes
+// call would then read from, silently corrupting the appended value once
+// the next read happened.
+func TestReader_ReadBytesAppendDoesNotAliasLaterReads(t *testing.T) {
+	data := []byte{
+		0x06, 'f', 'o', 'o', // bytes "foo" (len=3)
+		0x06, 'b', 'a', 'r', // bytes "bar" (len=3)
+	}
+	r := avro.NewReader(bytes.NewReader(data), 1024)
+
+	first := r.ReadBytes()
+	require.NoError(t, r.Error)
+	require.Equal(t, []byte("foo"), first)
+
+	// Appending within what used to be first's leftover slab capacity.
+	mutated := append(first, 'X', 'Y', 'Z')
+
+	second := r.ReadBytes()
+	require.NoError(t, r.Error)
+	assert.Equal(t, []byte("bar"), second)
+
+	// The real assertion: reading "bar" must not have silently overwritten
+	// the bytes the earlier append wrote into mutated.
+	assert.Equal(t, []byte("fooXYZ"), mutated)
+}
+
 func TestReader_ReadStringFastPathIsntBoundToBuffer(t *testing.T) {
 	data := []byte{0x06, 0x66, 0x6F, 0x6F, 0x08, 0x61, 0x76, 0x72, 0x6F}
 	r := avro.NewReader(bytes.NewReader(data), 4)

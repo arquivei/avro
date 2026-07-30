@@ -56,7 +56,8 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 	flgs.SetOutput(stderr)
 	flgs.StringVar(&cfg.Pkg, "pkg", "", "The package name of the output file.")
 	flgs.StringVar(&cfg.PkgDoc, "pkgdoc", "", "The package doc comment to output.")
-	flgs.StringVar(&cfg.Out, "o", "", "The output file path to write to instead of stdout.")
+	flgs.StringVar(&cfg.Out, "o", "", "The output file path to write to instead of stdout. "+
+		"Nothing is written if the generated code fails to format.")
 	flgs.StringVar(&cfg.Tags, "tags", "", "The additional field tags <tag-name>:{snake|camel|upper-camel|kebab}>[,...]")
 	flgs.BoolVar(&cfg.FullName, "fullname", false, "Use the full name of the Record schema to create the struct name.")
 	flgs.BoolVar(&cfg.Encoders, "encoders", false, "Generate encoders for the structs.")
@@ -151,7 +152,6 @@ func realMain(args []string, stdout, stderr io.Writer) int {
 	}
 	formatted, err := imports.Process("", buf.Bytes(), nil)
 	if err != nil {
-		_ = writeOut(cfg.Out, stdout, buf.Bytes())
 		_, _ = fmt.Fprintf(stderr, "Error: generated code could not be formatted: %v\n", err)
 		return 3
 	}

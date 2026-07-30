@@ -10,9 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        go-version: [ "1.24", "1.25" ]
+        go-version: [ "1.25", "1.26" ]
     env:
-      GOLANGCI_LINT_VERSION: v2.6.2
+      GOLANGCI_LINT_VERSION: v2.12.2
 
     steps:
       - name: Checkout code
@@ -33,10 +33,11 @@ jobs:
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
 
+      - name: Run govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.6.0 ./...
+
       - name: Setup gotestsum
-        uses: gertd/action-gotestsum@v3.0.0
-        with:
-          gotestsum_version: v1.13.0
+        run: go install gotest.tools/gotestsum@v1.13.0
 
       - name: Run Tests
         run: gotestsum --junitfile tests.xml --format pkgname -- -covermode=atomic -coverprofile=coverage.out -race ./...
@@ -105,7 +106,7 @@ jobs:
           - os: windows
             arch: s390x
     env:
-      GO_VERSION: "1.25"
+      GO_VERSION: "1.26"
 
     steps:
       - name: Checkout code

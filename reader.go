@@ -299,7 +299,7 @@ func (r *Reader) readBytes(op string) []byte {
 		if cap(r.slab) < size {
 			r.slab = make([]byte, 1024)
 		}
-		dst := r.slab[:size]
+		dst := r.slab[:size:size]
 		r.slab = r.slab[size:]
 		copy(dst, r.buf[r.head:r.head+size])
 		r.head += size

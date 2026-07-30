@@ -18,10 +18,10 @@ package {{ .PackageName }}
 type {{ $t.Name }} string
 const (
 	{{- range .Symbols }}
-	{{ printf "%s%s" $t.Name . | upperCamel }} {{ $t.Name }} = "{{ . }}"
-	{{- end }} 
+	{{ enumConstName $t.Name . }} {{ $t.Name }} = {{ printf "%q" . }}
+	{{- end }}
 )
-{{- end }} 
+{{- end }}
 
 {{- range .Typedefs }}
 	{{- if len .Doc }}
@@ -35,16 +35,7 @@ const (
 		{{- if len $f.Doc }}
 		// {{ replace $f.Doc "\n" "\n// " -1 }}
 		{{- end }}
-		{{ .Name }} {{ .Type }} `avro:"{{ $f.AvroFieldName }}"
-		{{- range $tag, $style := .Tags }}
-			{{- " "}}{{ $tag }}:"
-			{{- if eq $style "kebab" }}{{ kebab $f.AvroFieldName }}
-			{{- else if eq $style "upper-camel"}}{{ upperCamel $f.AvroFieldName }}
-			{{- else if eq $style "camel"}}{{ camel $f.AvroFieldName }}
-			{{- else if eq $style "snake"}}{{ snake $f.AvroFieldName }}
-			{{- else}}{{ $f.AvroFieldName }}
-			{{- end}}"
-		{{- end }}`
+		{{ .Name }} {{ .Type }} {{ buildTag . }}
 	{{- end }}
 	}
 

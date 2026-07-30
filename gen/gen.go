@@ -9,8 +9,11 @@ import (
 	"io"
 	"maps"
 	"slices"
+	"sort"
+	"strconv"
 	"strings"
 	"text/template"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/ettle/strcase"
@@ -102,7 +105,6 @@ func StructFromSchema(schema avro.Schema, w io.Writer, cfg Config) error {
 
 	formatted, err := imports.Process("", buf.Bytes(), nil)
 	if err != nil {
-		_, _ = w.Write(buf.Bytes())
 		return fmt.Errorf("generated code could not be formatted: %w", err)
 	}
 
@@ -326,23 +328,50 @@ func (g *Generator) generate(schema avro.Schema, metadata any) string {
 	}
 }
 
+// sanitizeIdent makes s safe to emit as a bare Go identifier token (a type
+// or struct field name) in generated source, by dropping every rune that
+// cannot appear in a Go identifier and ensuring the result does not start
+// with a digit. This is a no-op for any name that already satisfies Avro's
+// own name rules (checked by validateName); it only changes output for a
+// name reachable through avro.SkipNameValidation, which strcase's case
+// conversion does not filter on its own.
+func sanitizeIdent(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+
+	out := b.String()
+	if out == "" {
+		return "_"
+	}
+	if unicode.IsDigit(rune(out[0])) {
+		return "_" + out
+	}
+	return out
+}
+
 func (g *Generator) resolveEnum(s *avro.EnumSchema) string {
-	g.typeenums = append(g.typeenums, newTypeEnum(s.Name(), s.Symbols()))
-	return s.Name()
+	name := sanitizeIdent(s.Name())
+	g.typeenums = append(g.typeenums, newTypeEnum(name, s.Symbols()))
+	return name
 }
 
 func (g *Generator) resolveTypeName(s avro.NamedSchema) string {
 	if g.fullName {
-		return g.nameCaser.ToPascal(s.FullName())
+		return sanitizeIdent(g.nameCaser.ToPascal(s.FullName()))
 	}
-	return g.nameCaser.ToPascal(s.Name())
+	return sanitizeIdent(g.nameCaser.ToPascal(s.Name()))
 }
 
 func (g *Generator) resolveRecordSchema(schema *avro.RecordSchema, metadata any) string {
 	fields := make([]field, len(schema.Fields()))
 	for i, f := range schema.Fields() {
 		typ := g.generate(f.Type(), metadata)
-		fields[i] = g.newField(g.nameCaser.ToPascal(f.Name()), typ, f.Doc(), f.Name(), f.Props())
+		fieldName := sanitizeIdent(g.nameCaser.ToPascal(f.Name()))
+		fields[i] = g.newField(fieldName, typ, f.Doc(), f.Name(), f.Props())
 	}
 
 	typeName := g.resolveTypeName(schema)
@@ -465,11 +494,13 @@ func (g *Generator) addThirdPartyImport(pkg string) {
 func (g *Generator) Write(w io.Writer) error {
 	parsed, err := template.New("out").
 		Funcs(template.FuncMap{
-			"kebab":      strcase.ToKebab,
-			"upperCamel": strcase.ToPascal,
-			"camel":      strcase.ToCamel,
-			"snake":      strcase.ToSnake,
-			"replace":    strings.Replace,
+			"kebab":         strcase.ToKebab,
+			"upperCamel":    strcase.ToPascal,
+			"camel":         strcase.ToCamel,
+			"snake":         strcase.ToSnake,
+			"replace":       strings.Replace,
+			"buildTag":      buildTag,
+			"enumConstName": enumConstName,
 		}).
 		Parse(g.template)
 	if err != nil {
@@ -524,6 +555,56 @@ type field struct {
 	AvroFieldName string
 	Tags          map[string]TagStyle
 	Props         map[string]any
+}
+
+// buildTag renders a field's avro tag plus any configured extra tags as a
+// single Go struct tag literal, including the enclosing quotes.
+//
+// The tag is normally rendered as a raw (backtick-quoted) string, matching
+// prior output byte for byte. Backtick has no escape sequence inside a raw
+// string, so if a tag value contains one - reachable only through
+// avro.SkipNameValidation - the whole tag falls back to an interpreted
+// (quoted, escaped) string literal instead, which cannot be broken out of.
+func buildTag(f field) string {
+	names := make([]string, 0, len(f.Tags))
+	for name := range f.Tags {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var b strings.Builder
+	fmt.Fprintf(&b, `avro:"%s"`, f.AvroFieldName)
+
+	for _, name := range names {
+		val := f.AvroFieldName
+		switch f.Tags[name] {
+		case Kebab:
+			val = strcase.ToKebab(f.AvroFieldName)
+		case UpperCamel:
+			val = strcase.ToPascal(f.AvroFieldName)
+		case Camel:
+			val = strcase.ToCamel(f.AvroFieldName)
+		case Snake:
+			val = strcase.ToSnake(f.AvroFieldName)
+		}
+		fmt.Fprintf(&b, ` %s:"%s"`, name, val)
+	}
+
+	tag := b.String()
+	if !strings.Contains(tag, "`") {
+		return "`" + tag + "`"
+	}
+	return strconv.Quote(tag)
+}
+
+// enumConstName builds the Go identifier for an enum constant from the
+// enum's type name and a raw symbol. The symbol reaches this function
+// unescaped and, like any schema name, may contain arbitrary characters
+// when avro.SkipNameValidation is set - strcase's case conversion alone
+// does not filter those out, so the result is sanitized the same way
+// struct and field names are.
+func enumConstName(typeName, symbol string) string {
+	return sanitizeIdent(typeName + strcase.ToPascal(symbol))
 }
 
 type typeenum struct {

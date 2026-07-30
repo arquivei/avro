@@ -26,6 +26,13 @@ func createEncoderOfArray(e *encoderContext, schema *ArraySchema, typ reflect2.T
 	return &errorEncoder{err: fmt.Errorf("avro: %s is unsupported for Avro %s", typ.String(), schema.Type())}
 }
 
+// arrayGrowChunk bounds how many elements the array decoder will grow the
+// destination slice by before decoding and checking for errors. This keeps a
+// block declaring a huge, attacker-controlled element count from allocating
+// memory up front for the full count: growth happens in bounded steps, and
+// decoding stops as soon as the underlying data runs out.
+const arrayGrowChunk = 1024
+
 func decoderOfArray(d *decoderContext, arr *ArraySchema, typ reflect2.Type) ValDecoder {
 	sliceType := typ.(*reflect2.UnsafeSliceType)
 	decoder := decoderOfType(d, arr.Items(), sliceType.Elem())
@@ -52,22 +59,27 @@ func (d *arrayDecoder) Decode(ptr unsafe.Pointer, r *Reader) {
 			break
 		}
 
-		start := size
-		size += int(l)
+		for l > 0 {
+			chunk := min(l, int64(arrayGrowChunk))
+			l -= chunk
 
-		if size > r.cfg.getMaxSliceAllocSize() {
-			r.ReportError("decode array", "size is greater than `Config.MaxSliceAllocSize`")
-			return
-		}
+			start := size
+			size += int(chunk)
 
-		sliceType.UnsafeGrow(ptr, size)
-
-		for i := start; i < size; i++ {
-			elemPtr := sliceType.UnsafeGetIndex(ptr, i)
-			d.decoder.Decode(elemPtr, r)
-			if r.Error != nil {
-				r.Error = fmt.Errorf("reading %s: %w", d.typ.String(), r.Error)
+			if size > r.cfg.getMaxSliceAllocSize() {
+				r.ReportError("decode array", "size is greater than `Config.MaxSliceAllocSize`")
 				return
+			}
+
+			sliceType.UnsafeGrow(ptr, size)
+
+			for i := start; i < size; i++ {
+				elemPtr := sliceType.UnsafeGetIndex(ptr, i)
+				d.decoder.Decode(elemPtr, r)
+				if r.Error != nil {
+					r.Error = fmt.Errorf("reading %s: %w", d.typ.String(), r.Error)
+					return
+				}
 			}
 		}
 	}

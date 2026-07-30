@@ -125,14 +125,21 @@ func (d *mapDecoderUnmarshaler) Decode(ptr unsafe.Pointer, r *Reader) {
 				keyObj = d.keyType.UnsafeIndirect(keyPtr)
 			}
 			unmarshaler := keyObj.(encoding.TextUnmarshaler)
-			err := unmarshaler.UnmarshalText([]byte(r.ReadString()))
-			if err != nil {
+			keyStr := r.ReadString()
+			if r.Error != nil {
+				return
+			}
+			if err := unmarshaler.UnmarshalText([]byte(keyStr)); err != nil {
 				r.ReportError("mapDecoderUnmarshaler", err.Error())
 				return
 			}
 
 			elemPtr := d.elemType.UnsafeNew()
 			d.decoder.Decode(elemPtr, r)
+			if r.Error != nil {
+				r.Error = fmt.Errorf("reading map[string]%s: %w", d.elemType.String(), r.Error)
+				return
+			}
 
 			d.mapType.UnsafeSetIndex(ptr, keyPtr, elemPtr)
 		}

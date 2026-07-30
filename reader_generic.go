@@ -127,29 +127,46 @@ func (r *Reader) ReadNext(schema Schema) any {
 }
 
 // ReadArrayCB reads an array with a callback per item.
+// Reading stops early, without error, if fn returns false. It also stops if
+// the Reader enters an error state, e.g. due to a truncated block.
+//
+// fn must read from r on every call (as ReadNext's own use of this method
+// does). A block's declared element count is attacker-controllable when
+// decoding untrusted input; a fn that never reads from r gives the Reader no
+// way to detect that the count does not match the available data, and the
+// loop will run for the full declared count.
 func (r *Reader) ReadArrayCB(fn func(*Reader) bool) {
 	for {
 		l, _ := r.ReadBlockHeader()
-		if l == 0 {
+		if l == 0 || r.Error != nil {
 			break
 		}
 		for range l {
-			fn(r)
+			if !fn(r) || r.Error != nil {
+				return
+			}
 		}
 	}
 }
 
-// ReadMapCB reads an array with a callback per item.
+// ReadMapCB reads a map with a callback per item.
+// Reading stops early, without error, if fn returns false. It also stops if
+// the Reader enters an error state, e.g. due to a truncated block.
 func (r *Reader) ReadMapCB(fn func(*Reader, string) bool) {
 	for {
 		l, _ := r.ReadBlockHeader()
-		if l == 0 {
+		if l == 0 || r.Error != nil {
 			break
 		}
 
 		for range l {
 			field := r.ReadString()
-			fn(r, field)
+			if r.Error != nil {
+				return
+			}
+			if !fn(r, field) || r.Error != nil {
+				return
+			}
 		}
 	}
 }
