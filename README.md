@@ -29,7 +29,7 @@ I no longer have the time to maintain it.
 Install with:
 
 ```shell
-go get github.com/hamba/avro/v2
+go get github.com/arquivei/avro/v2
 ```
 
 **Note:** This project has renamed the default branch from `master` to `main`. You will need to update your local environment.
@@ -243,7 +243,7 @@ You can use the avrogen command line tool to generate the structs, or use it as 
 Install the struct generator with:
 
 ```shell
-go install github.com/hamba/avro/v2/cmd/avrogen@<version>
+go install github.com/arquivei/avro/v2/cmd/avrogen@<version>
 ```
 
 Example usage assuming there's a valid schema in `in.avsc`:
@@ -290,7 +290,7 @@ schemas to the console. It can be used in CI/CD pipelines to validate schema cha
 Install the Avro schema validator with:
 
 ```shell
-go install github.com/hamba/avro/v2/cmd/avrosv@<version>
+go install github.com/arquivei/avro/v2/cmd/avrosv@<version>
 ```
 
 Example usage assuming there's a valid schema in `in.avsc` (exit status code is `0`):

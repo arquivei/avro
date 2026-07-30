@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hamba/avro/v2/ocf"
+	"github.com/arquivei/avro/v2/ocf"
 )
 
 // FuzzOCFDecode is discovery/regression coverage for
